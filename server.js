@@ -1,4 +1,16 @@
-import 'dotenv/config'
+import { createRequire } from 'module'
+import { resolve } from 'path'
+import { fileURLToPath } from 'url'
+
+// Explicitly load .env from the project root regardless of CWD
+const __dirname = fileURLToPath(new URL('.', import.meta.url))
+const require = createRequire(import.meta.url)
+const dotenv = require('dotenv')
+const result = dotenv.config({ path: resolve(__dirname, '.env') })
+if (result.error) {
+  console.warn('.env load warning:', result.error.message)
+}
+
 import express from 'express'
 import Anthropic from '@anthropic-ai/sdk'
 import cors from 'cors'
@@ -8,7 +20,11 @@ const app = express()
 app.use(express.json())
 app.use(cors())
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+const API_KEY = process.env.ANTHROPIC_API_KEY
+console.log(`.env path  →  ${resolve(__dirname, '.env')}`)
+console.log(`API key    →  ${API_KEY ? `found (${API_KEY.slice(0, 16)}…)` : 'MISSING'}`)
+
+const anthropic = new Anthropic({ apiKey: API_KEY })
 
 // Serialize regionSummary (Sets → arrays) once at startup
 const regionData = Object.fromEntries(
@@ -69,11 +85,11 @@ app.post('/api/chat', async (req, res) => {
 })
 
 app.get('/api/health', (_req, res) =>
-  res.json({ ok: true, devices: devices.length, apiKey: !!process.env.ANTHROPIC_API_KEY })
+  res.json({ ok: true, devices: devices.length, apiKey: !!API_KEY })
 )
 
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log(`SASE API  →  http://localhost:${PORT}`)
-  console.log(`API key   →  ${process.env.ANTHROPIC_API_KEY ? 'configured' : 'MISSING (set ANTHROPIC_API_KEY)'}`)
+  console.log(`API key   →  ${API_KEY ? 'configured' : 'MISSING — create .env with ANTHROPIC_API_KEY=your_key'}`)
 })
