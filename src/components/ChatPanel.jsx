@@ -54,7 +54,8 @@ export default function ChatPanel({ isOpen, onToggle }) {
       setMessages([...next, {
         role:    'assistant',
         content: data.error ? `Error: ${data.error}` : data.reply,
-        isError: !!data.error
+        isError: !!data.error,
+        isMock:  !!data.mock
       }])
     } catch {
       setMessages([...next, {
@@ -113,6 +114,7 @@ export default function ChatPanel({ isOpen, onToggle }) {
               {m.role === 'assistant' && <div className="msg-avatar">AI</div>}
               <div className="msg-bubble">
                 <pre className="msg-text">{m.content}</pre>
+                {m.isMock && <span className="mock-badge">mock</span>}
               </div>
             </div>
           ))}

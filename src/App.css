@@ -334,3 +334,17 @@ body {
 .chat-send-btn:hover:not(:disabled)  { background: #0097d0; }
 .chat-send-btn:active:not(:disabled) { transform: scale(.94); }
 .chat-send-btn:disabled { background: #21262d; cursor: not-allowed; }
+
+.mock-badge {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: #e3b341;
+  background: rgba(227,179,65,.12);
+  border: 1px solid rgba(227,179,65,.3);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
