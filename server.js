@@ -56,11 +56,15 @@ app.post('/api/chat', async (req, res) => {
     res.json({ reply: response.content[0].text })
   } catch (err) {
     console.error('Anthropic error:', err.message)
-    const status = err.status ?? 500
-    const msg = status === 401
-      ? 'Invalid API key — set ANTHROPIC_API_KEY in your environment.'
+    const isAuthError =
+      err.status === 401 ||
+      err.message?.toLowerCase().includes('apikey') ||
+      err.message?.toLowerCase().includes('authentication') ||
+      err.message?.toLowerCase().includes('authtoken')
+    const msg = isAuthError
+      ? 'API key not found. Create a .env file in the project root with: ANTHROPIC_API_KEY=your_key_here'
       : `AI error: ${err.message}`
-    res.status(status).json({ error: msg })
+    res.status(err.status ?? 500).json({ error: msg })
   }
 })
 
