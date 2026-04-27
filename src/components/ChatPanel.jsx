@@ -23,11 +23,11 @@ I cover three areas — pick a topic or try a suggestion below:
 }
 
 const SUGGESTIONS = [
-  'Token estimate?',
+  'Token balance?',
+  'Token alerts?',
+  'Token trend?',
   'NIOSXaaS sizes?',
-  'Best cloud location?',
   'Tunnels down?',
-  'BGP flapping?',
   'Devices by region?',
 ]
 

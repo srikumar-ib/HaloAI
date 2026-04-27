@@ -6,6 +6,8 @@ import { ipsecTunnels, bgpSessions, ipsecSummary, bgpSummary } from './src/data/
 import {
   niosxSizes, tokenPacks, regionCloudMap, demoEnv, regionBreakdown,
   demoTokenEstimate, skuCatalog, pocConfig, calculateTokens,
+  tokenPool, tokenHistory, regionTokenAllocation, tokenDrivers,
+  tokenAlerts, tokenForecast,
 } from './src/data/catalog.js'
 
 const API_KEY  = process.env.ANTHROPIC_API_KEY
@@ -230,11 +232,124 @@ function mockReply(message) {
     q.includes('where') && (q.includes('deploy') || q.includes('install') || q.includes('host')) ||
     q.includes('latency') && q.includes('cloud') || q.includes('aws') || q.includes('azure') ||
     q.includes('management token') || q.includes('server token') || q.includes('reporting token') ||
-    q.includes('assumption') || q.includes('how is') && q.includes('calculat')
+    q.includes('assumption') || q.includes('how is') && q.includes('calculat') ||
+    q.includes('balance') || q.includes('pool') || q.includes('utiliz') || q.includes('utilis') ||
+    q.includes('trend') || q.includes('history') || q.includes('month') || q.includes('growth') ||
+    q.includes('alert') || q.includes('forecast') || q.includes('renewal') || q.includes('expir') ||
+    q.includes('burn rate') || q.includes('driver') || q.includes('what consume') ||
+    q.includes('region') && q.includes('token') || q.includes('allocation') || q.includes('shortfall')
 
   if (!isSellerQuery) {
     // fall through to IPsec/BGP section
   } else {
+
+  // ── Token pool / balance / current status ───────────────────────────────
+  if (q.includes('balance') || q.includes('pool') || q.includes('current') && q.includes('token') ||
+      q.includes('how many token') && q.includes('left') || q.includes('available token') ||
+      q.includes('token status') || q.includes('utiliz') || q.includes('utilis')) {
+    const p = tokenPool
+    const mgmt = p.categories.management
+    const srv  = p.categories.server
+    const rpt  = p.categories.reporting
+    return `**Token Pool Status — as of ${p.asOf}**
+Contract: ${p.contractStart} → ${p.contractExpiry}
+
+                    Purchased  Allocated  Consumed  Util%
+Management tokens:   ${String(mgmt.purchased).padStart(5)}     ${String(mgmt.allocated).padStart(5)}     ${String(mgmt.consumed).padStart(5)}    ${mgmt.utilizationPct}%
+Server tokens:       ${String(srv.purchased).padStart(5)}     ${String(srv.allocated).padStart(5)}     ${String(srv.consumed).padStart(5)}    ${srv.utilizationPct}%
+Reporting tokens:    ${String(rpt.purchased).padStart(5)}       ${String(rpt.allocated).padStart(5)}       ${String(rpt.consumed).padStart(5)}    ${rpt.utilizationPct}%
+────────────────────────────────────────────────────────
+TOTAL:               ${String(p.purchased).padStart(5)}     ${String(p.allocated).padStart(5)}           ${p.utilizationPct}%
+
+Available (unallocated): ${p.available} tokens
+Server deployment: ${srv.deployedMembers} members — ${Object.entries(srv.formFactorBreakdown).filter(([,v])=>v>0).map(([k,v])=>`${v}×${k}`).join(', ')}
+Reporting: ${(rpt.monthlyLogEvents/1_000_000).toFixed(0)} M events/month consumed
+
+Ask "token alerts" for utilisation warnings or "token forecast" for renewal guidance.`
+  }
+
+  // ── Token consumption trend / history ────────────────────────────────────
+  if (q.includes('trend') || q.includes('history') || q.includes('over time') ||
+      q.includes('month') && q.includes('token') || q.includes('growth') || q.includes('consumption') && q.includes('token')) {
+    const rows = tokenHistory.map(h =>
+      `${h.month.padEnd(10)}  Mgmt:${String(h.management).padStart(5)}  Server:${String(h.server).padStart(5)}  Rpt:${String(h.reporting).padStart(4)}  Total:${String(h.total).padStart(5)}  ${h.newDevices > 0 ? `(+${h.newDevices} devices)` : ''}`
+    ).join('\n')
+    const first = tokenHistory[0].total
+    const last  = tokenHistory[tokenHistory.length - 1].total
+    const growthPct = (((last - first) / first) * 100).toFixed(1)
+    return `**Token Consumption Trend — Nov 2025 to Apr 2026**
+
+${rows}
+
+6-month growth: ${first.toLocaleString()} → ${last.toLocaleString()} tokens (+${growthPct}%)
+Driver: Management tokens +${tokenHistory[tokenHistory.length-1].management - tokenHistory[0].management} (new device onboarding across APAC, EMEA, LatAm)
+Server tokens flat: deployment unchanged (12 members across 6 regions)
+Reporting +${tokenHistory[tokenHistory.length-1].reporting - tokenHistory[0].reporting}: Threat Defense enabled on EU sites in Jan 2026`
+  }
+
+  // ── Per-region token allocation ──────────────────────────────────────────
+  if (q.includes('region') && q.includes('token') || q.includes('allocation') ||
+      q.includes('by region') || q.includes('which region') && q.includes('token')) {
+    const rows = Object.entries(regionTokenAllocation).map(([region, r]) => {
+      const bar = '█'.repeat(Math.round(r.utilizationPct.management / 10))
+      return `**${region}** (${r.managedIPs.toLocaleString()} IPs · ${r.logEventsPerMonth} events/mo)
+  Mgmt: ${r.managementTokens} tokens (${r.utilizationPct.management}%)  Server: ${r.serverTokens} tokens (${r.utilizationPct.server}%)  Reporting: ${r.reportingTokens} tokens (${r.utilizationPct.reporting}%)
+  Total: ${r.total} tokens  |  NIOSXaaS: ${r.niosxDeployment}  |  Trend: ${r.trend}`
+    }).join('\n\n')
+    const grandTotal = Object.values(regionTokenAllocation).reduce((s,r)=>s+r.total,0)
+    return `**Token Allocation by Region — Total: ${grandTotal.toLocaleString()} tokens**\n\n${rows}\n\nHighest: Asia-Pacific (APAC growing fastest at 92% management utilisation)\nLowest:  Africa (60% management — NBO-Branch-01 offline reducing managed IP count)`
+  }
+
+  // ── Token alerts ─────────────────────────────────────────────────────────
+  if (q.includes('alert') || q.includes('warning') && q.includes('token') ||
+      q.includes('threshold') || q.includes('exceed') || q.includes('near') && q.includes('limit')) {
+    const warnings = tokenAlerts.filter(a => a.severity === 'warning')
+    const infos    = tokenAlerts.filter(a => a.severity === 'info')
+    const fmt = (a) => `[${a.severity.toUpperCase()}] **${a.title}**\n  Region: ${a.region} · Category: ${a.category}\n  ${a.detail}\n  Action: ${a.action}\n  Token impact: ${a.tokenImpact}  |  ${a.urgency}`
+    return `**Token Alerts — ${tokenAlerts.length} active (${warnings.length} warnings, ${infos.length} informational)**\n\n${tokenAlerts.map(fmt).join('\n\n')}`
+  }
+
+  // ── Token drivers — what consumes each type ──────────────────────────────
+  if (q.includes('driver') || q.includes('what consume') || q.includes('what use') ||
+      q.includes('how is') && q.includes('token') || q.includes('what drive') ||
+      q.includes('management token') && (q.includes('why') || q.includes('what') || q.includes('how')) ||
+      q.includes('reporting token') && (q.includes('why') || q.includes('what') || q.includes('how'))) {
+    const out = Object.entries(tokenDrivers).map(([type, d]) => {
+      const rows = d.drivers.map(dr =>
+        `  • ${dr.driver.padEnd(36)} ${dr.rate.padEnd(28)} [${dr.basis}]\n    Example: ${dr.example}`
+      ).join('\n')
+      return `**${type.charAt(0).toUpperCase()+type.slice(1)} Tokens** — ${d.description}\n${rows}\n  Demo total: ${d.total_raw_demo ?? d.total_deployed_demo} raw → ${d.total_purchased_demo} purchased (rounded to pack)\n  ${d.note ?? ''}`
+    }).join('\n\n')
+    return `**Token Consumption Drivers**\n\n${out}`
+  }
+
+  // ── Renewal forecast ─────────────────────────────────────────────────────
+  if (q.includes('forecast') || q.includes('renewal') || q.includes('expir') ||
+      q.includes('burn rate') || q.includes('run out') || q.includes('shortfall') ||
+      q.includes('next year') || q.includes('next contract')) {
+    const f = tokenForecast
+    const r = f.renewalRecommendation
+    return `**Token Renewal Forecast — Contract expires ${f.contractExpiry}**
+
+Current monthly burn: ${f.currentMonthlyBurn.toLocaleString()} tokens
+Monthly growth rate:  ${f.growthRatePctPerMonth}% (6-month trailing average)
+Projected burn at renewal: ~${f.projectedBurnAtRenewal.toLocaleString()} tokens/month
+Months remaining: ${f.monthsRemaining}
+Projected shortfall vs current purchase: ${f.projectedShortfall > 0 ? f.projectedShortfall + ' tokens' : 'None — within current pack at current growth rate'}
+
+RENEWAL RECOMMENDATION
+──────────────────────────────────────────────────────
+Management  Current: ${r.management.current.toLocaleString()}  →  Recommended: ${r.management.recommended.toLocaleString()} (${r.management.delta})
+            ${r.management.reason}
+Server      Current: ${r.server.current.toLocaleString()}  →  Recommended: ${r.server.recommended.toLocaleString()} (${r.server.delta})
+            ${r.server.reason}
+Reporting   Current: ${r.reporting.current}  →  Recommended: ${r.reporting.recommended.toLocaleString()} (${r.reporting.delta})
+            ${r.reporting.reason}
+──────────────────────────────────────────────────────
+TOTAL:      Current: ${r.total.current.toLocaleString()}  →  Recommended: ${r.total.recommended.toLocaleString()} (${r.total.delta})
+
+${f.notes.map(n => `• ${n}`).join('\n')}`
+  }
 
   // ── Token estimate overview / total ──────────────────────────────────────
   if (q.includes('how many token') || q.includes('token estimate') || q.includes('total token') ||
@@ -398,12 +513,22 @@ CLOUD PLACEMENT
   // ── Generic seller copilot fallback ─────────────────────────────────────
   return `**Seller / Channel-Partner Copilot — Infoblox × Versa SASE**
 
-I can help you with:
+TOKEN CALCULATOR & SIZING
 • "How many tokens does this environment need?"
 • "Show per-region NIOSXaaS sizing"
-• "What are the NIOSXaaS form factors and specs?"
+• "What are the NIOSXaaS form factors?"
 • "Best cloud location to deploy NIOSXaaS?"
 • "Estimate tokens for 50 sites"
+
+TOKEN OPERATIONS
+• "What's my current token balance?"
+• "Show token consumption trend"
+• "Token allocation by region"
+• "Any token alerts?"
+• "What drives management token usage?"
+• "Token renewal forecast"
+
+SALES
 • "What's the recommended PoC setup?"
 • "Show me the SKU list"
 • "Explain the token calculation assumptions"`
