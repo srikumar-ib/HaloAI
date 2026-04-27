@@ -2,22 +2,33 @@ import { useState, useRef, useEffect } from 'react'
 
 const WELCOME = {
   role: 'assistant',
-  content: `Hi! I'm your Network AI Assistant for the SASE Control Center.
+  content: `Hi! I'm your Infoblox × Versa SASE AI Assistant.
 
-I have full visibility into all ${87} branch devices across the globe. Try asking:
+I cover three areas — pick a topic or try a suggestion below:
 
+  NETWORK TOPOLOGY
   • How many devices are in Europe?
-  • Which devices are currently offline?
-  • Show me device counts by region.
-  • Any warnings in Asia-Pacific?
-  • Which country has the most devices?`
+  • Which devices are offline?
+
+  IPSEC & BGP TROUBLESHOOTING
+  • Which IPsec tunnels are down?
+  • Any BGP sessions flapping?
+  • What's wrong with Chicago?
+
+  SELLER / PARTNER COPILOT
+  • How many tokens does this environment need?
+  • What size NIOSXaaS servers for APAC?
+  • Best cloud location for NIOSXaaS?
+  • Estimate tokens for 50 sites`
 }
 
 const SUGGESTIONS = [
-  'Devices in Europe?',
-  'Any offline devices?',
-  'Asia-Pacific count?',
-  'Devices by region?'
+  'Token estimate?',
+  'NIOSXaaS sizes?',
+  'Best cloud location?',
+  'Tunnels down?',
+  'BGP flapping?',
+  'Devices by region?',
 ]
 
 export default function ChatPanel({ isOpen, onToggle }) {
@@ -96,8 +107,8 @@ export default function ChatPanel({ isOpen, onToggle }) {
               </svg>
             </div>
             <div>
-              <div className="chat-title">Network AI Assistant</div>
-              <div className="chat-subtitle">SASE Control Center · 87 devices</div>
+              <div className="chat-title">Infoblox AI Assistant</div>
+              <div className="chat-subtitle">Topology · IPsec/BGP · Partner Copilot</div>
             </div>
           </div>
           <button className="chat-close-btn" onClick={onToggle}>

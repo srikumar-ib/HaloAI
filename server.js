@@ -3,6 +3,10 @@ import Anthropic from '@anthropic-ai/sdk'
 import cors from 'cors'
 import { devices, regionSummary, statusTotals } from './src/data/devices.js'
 import { ipsecTunnels, bgpSessions, ipsecSummary, bgpSummary } from './src/data/network.js'
+import {
+  niosxSizes, tokenPacks, regionCloudMap, demoEnv, regionBreakdown,
+  demoTokenEstimate, skuCatalog, pocConfig, calculateTokens,
+} from './src/data/catalog.js'
 
 const API_KEY  = process.env.ANTHROPIC_API_KEY
 const MOCK_MODE = !API_KEY || process.env.MOCK_AI === 'true'
@@ -215,18 +219,235 @@ function mockReply(message) {
     }
   }
 
+  // ── Seller / Channel-Partner Copilot ────────────────────────────────────────
+
+  const isSellerQuery =
+    q.includes('token') || q.includes('sku') || q.includes('pricing') || q.includes('quote') ||
+    q.includes('niosx') || q.includes('nios-x') || q.includes('nios x') || q.includes('niosxaas') ||
+    q.includes('server size') || q.includes('form factor') || q.includes('how many token') ||
+    q.includes('estimate') || q.includes('calculat') || q.includes('size') && q.includes('server') ||
+    q.includes('poc') || q.includes('proof of concept') || q.includes('cloud') && q.includes('deploy') ||
+    q.includes('where') && (q.includes('deploy') || q.includes('install') || q.includes('host')) ||
+    q.includes('latency') && q.includes('cloud') || q.includes('aws') || q.includes('azure') ||
+    q.includes('management token') || q.includes('server token') || q.includes('reporting token') ||
+    q.includes('assumption') || q.includes('how is') && q.includes('calculat')
+
+  if (!isSellerQuery) {
+    // fall through to IPsec/BGP section
+  } else {
+
+  // ── Token estimate overview / total ──────────────────────────────────────
+  if (q.includes('how many token') || q.includes('token estimate') || q.includes('total token') ||
+      (q.includes('token') && (q.includes('need') || q.includes('requir') || q.includes('environment') || q.includes('calculat')))) {
+    const e = demoTokenEstimate
+    const rows = Object.entries(e.regionSizing).map(([r, s]) =>
+      `  ${r.padEnd(18)} ${s.formFactor} × ${s.serversDeployed}  ${String(s.serverTokensUsed).padStart(5)} server tokens  (${s.branches}B + ${s.hubs}H, ${s.peakQps} QPS peak)`
+    ).join('\n')
+    return `**Infoblox Token Estimate — ${e.inputs.sites}-device Versa SD-WAN environment**
+
+Environment: ${e.inputs.branchCount} branch sites + ${e.inputs.hubCount} hub/DC sites · 6 regions
+Managed IPs: ${e.inputs.totalManagedIPs.toLocaleString()}
+
+TOKEN BREAKDOWN
+────────────────────────────────────────────────
+Management  ${String(e.management.tokens).padStart(6)} tokens  (${e.management.packs} × 1 000-pack)
+            Basis: ${e.inputs.totalManagedIPs.toLocaleString()} managed IPs ÷ 5 = ${e.management.raw} raw → rounded up
+Server      ${String(e.server.tokens).padStart(6)} tokens  (${e.server.packs} × 500-pack)
+            Per region (HA pair per region):
+${rows}
+Reporting   ${String(e.reporting.tokens).padStart(6)} tokens  (${e.reporting.packs} × 40-pack)
+            ${(e.reporting.monthlyEvents / 1_000_000).toFixed(0)} M log events/month ÷ 10 M × 40 = ${e.reporting.raw} raw
+────────────────────────────────────────────────
+TOTAL       ${String(e.total).padStart(6)} tokens
+
+Key assumptions: 50 endpoints/branch · 200/hub · 30 QPS/branch · 150 QPS/hub · 85% DNS CHR · 1.3× headroom · HA pair/region
+Ask "explain assumptions" for the full model or "show per-region sizing" for server details.`
+  }
+
+  // ── Per-region sizing detail ─────────────────────────────────────────────
+  if (q.includes('per-region') || q.includes('per region') || q.includes('region') && q.includes('siz') ||
+      q.includes('which server') || q.includes('server per region') || q.includes('niosx per')) {
+    const e = demoTokenEstimate
+    const lines = Object.entries(e.regionSizing).map(([region, s]) => {
+      const cloud = regionCloudMap[region]
+      return `**${region}**
+  Sites: ${s.branches} branches + ${s.hubs} hubs  |  Peak QPS: ${s.peakQps} → required (×1.3): ${s.requiredQps}
+  Form factor: **${s.formFactor}** (${s.vCPU} vCPU / ${s.ramGB} GB RAM · ${s.dnsQpsCapacity.toLocaleString()} QPS capacity @ 85% CHR)
+  Servers: ${s.serversDeployed} × ${s.formFactor} = ${s.serverTokensUsed} server tokens
+  NIOSXaaS location: ${cloud.primary.cloud} ${cloud.primary.region} (~${cloud.primary.latencyToHub} to hub)
+  Failover: ${cloud.secondary.cloud} ${cloud.secondary.region}
+  Note: ${cloud.notes}`
+    })
+    return `**NIOSXaaS Per-Region Sizing — ${e.inputs.sites}-device environment**\n\n${lines.join('\n\n')}`
+  }
+
+  // ── NIOSXaaS form factor catalogue ──────────────────────────────────────
+  if (q.includes('form factor') || q.includes('all size') || q.includes('server size') || q.includes('niosx size') ||
+      q.includes('xs') || q.includes(' s ') || q.includes(' m ') || q.includes(' l ') || q.includes(' xl ')) {
+    const rows = niosxSizes.map(s =>
+      `**${s.label}** (${s.serverTokens} tokens) — ${s.vCPU} vCPU / ${s.ramGB} GB RAM\n` +
+      `  DNS: ${s.dnsQPS_85CHR.toLocaleString()} QPS @ 85% CHR  |  DHCP: ${s.dhcpLPS} LPS  |  IPAM objects: ${s.ipamObjects.toLocaleString()}\n` +
+      `  Max sites: ${s.maxSites}  |  Cloud equiv: ${s.cloudEquiv}\n` +
+      `  Use case: ${s.useCase}`
+    ).join('\n\n')
+    return `**NIOSXaaS Form Factors — All Sizes**\n\n${rows}\n\n*Note: XS vCPU/RAM confirmed from Infoblox docs. M/L/XL estimated from published benchmarks — verify with Infoblox SE before quoting.*`
+  }
+
+  // ── Best cloud location for NIOSXaaS ────────────────────────────────────
+  if (q.includes('where') || q.includes('location') || q.includes('cloud region') || q.includes('deploy') ||
+      q.includes('best') && q.includes('cloud') || q.includes('aws region') || q.includes('latency') && q.includes('deploy')) {
+    const lines = Object.entries(regionCloudMap).map(([region, c]) =>
+      `**${region}**\n` +
+      `  Primary:   ${c.primary.cloud} — ${c.primary.region}  (${c.primary.latencyToHub} to hub)\n` +
+      `  Secondary: ${c.secondary.cloud} — ${c.secondary.region}  (${c.secondary.latencyToHub})\n` +
+      `  Note: ${c.notes}`
+    )
+    return `**Recommended NIOSXaaS Deployment Locations**\n\nBasis: <20 ms hub-to-DNS latency target, co-located with Versa SD-WAN controller PoP where possible.\n\n${lines.join('\n\n')}`
+  }
+
+  // ── What-if calculator — custom site count ───────────────────────────────
+  const siteMatch = q.match(/(\d+)\s+site/)
+  if (siteMatch) {
+    const requestedSites = parseInt(siteMatch[1], 10)
+    const hubGuess = Math.max(1, Math.round(requestedSites * 0.1))
+    const regCount = requestedSites <= 10 ? 1 : requestedSites <= 30 ? 2 : requestedSites <= 60 ? 3 : requestedSites <= 100 ? 4 : 6
+    // build proportional region breakdown
+    const branchPer = Math.floor((requestedSites - hubGuess) / regCount)
+    const hubPer    = Math.max(1, Math.floor(hubGuess / regCount))
+    const customBreakdown = Object.fromEntries(
+      Object.keys(regionBreakdown).slice(0, regCount).map(r => [r, { branches: branchPer, hubs: hubPer }])
+    )
+    const est = calculateTokens({
+      sites: requestedSites, hubCount: hubGuess,
+      regionCount: regCount, regBreakdown: customBreakdown,
+    })
+    return `**Token Estimate for ${requestedSites}-site deployment**
+
+Assumed: ${est.inputs.branchCount} branches + ${est.inputs.hubCount} hubs · ${regCount} region(s)
+Managed IPs: ~${est.inputs.totalManagedIPs.toLocaleString()} (50/branch · 200/hub)
+
+Management tokens: ${est.management.tokens.toLocaleString()} (${est.management.packs} × 1 000-pack)
+Server tokens:     ${est.server.tokens.toLocaleString()} (${est.server.packs} × 500-pack)
+Reporting tokens:  ${est.reporting.tokens.toLocaleString()} (${est.reporting.packs} × 40-pack)
+─────────────────────────────────────
+TOTAL:             ${est.total.toLocaleString()} tokens
+
+*Assumptions: same per-site rates as base model. Adjust for actual QPS, endpoint density, and HA requirements in formal quote.*`
+  }
+
+  // ── PoC configuration ────────────────────────────────────────────────────
+  if (q.includes('poc') || q.includes('proof of concept') || q.includes('pilot') || q.includes('trial')) {
+    const svrs = pocConfig.servers.map(s => `• ${s.role}: NIOSXaaS ${s.formFactor} — ${s.cloud}`).join('\n')
+    const sc   = pocConfig.successCriteria.map(c => `  ✓ ${c}`).join('\n')
+    return `**Recommended PoC Configuration — Versa + Infoblox**
+
+Duration: ${pocConfig.duration}
+Min tokens: ~${pocConfig.minTokens.toLocaleString()}
+Scope: ${pocConfig.scope}
+
+Servers:
+${svrs}
+
+Success Criteria:
+${sc}
+
+*Tip: Start with an S Grid Master + 2 × XS members. Versa SD-WAN forwarder points to the NIOSXaaS members for DNS resolution over the IPsec tunnel.*`
+  }
+
+  // ── SKU list ─────────────────────────────────────────────────────────────
+  if (q.includes('sku') || q.includes('part number') || q.includes('product') && q.includes('list') ||
+      q.includes('what to quote') || q.includes('quote') || q.includes('bundle')) {
+    const rows = skuCatalog.map(s => `**${s.sku}** — ${s.name}\n  ${s.description}\n  Unit: ${s.unit}`).join('\n\n')
+    return `**Illustrative Infoblox SKUs — Versa SASE Integration**\n\n${rows}\n\n*Note: SKUs are illustrative for demo purposes. Use official Infoblox price book for formal quotes.*`
+  }
+
+  // ── Assumptions explanation ───────────────────────────────────────────────
+  if (q.includes('assumption') || q.includes('how is') || q.includes('how are') ||
+      q.includes('explain') && q.includes('token') || q.includes('basis') || q.includes('methodology')) {
+    return `**Token Calculator — Declared Assumptions**
+
+ENVIRONMENT MODEL
+• Branch sites: 50 managed endpoints each (workstations, phones, printers, IoT)
+• Hub/DC sites: 200 managed endpoints each (servers, network infra, DMZ)
+• Peak DNS QPS: 30/branch · 150/hub (busiest 5-min window — Infoblox billing metric)
+• DNS cache hit ratio: 85% (industry standard for a warm enterprise resolver)
+• Headroom factor: ×1.3 on peak QPS before form-factor selection (~75% utilisation)
+• HA: 2 NIOSXaaS members (HA pair) per region — no single-member production deployments
+
+TOKEN MODEL
+• Management tokens: ~1 per 5 active managed IPs (pre-sales estimate; confirm per customer)
+  → Official basis: "active IP addresses, IPAM objects, DDI assets" — exact rate not public
+• Server tokens: XS 250 · S 470 · M 940 · L 1 880 · XL 3 760 — CONFIRMED from Infoblox docs
+• Reporting tokens: 40 per 10 M log events/month — CONFIRMED from Infoblox FAQs
+• Pack sizes: Management 1 000 · Server 500 · Reporting 40 — quantities rounded up
+
+NIOSXAAS HARDWARE (where marked ESTIMATED — verify with Infoblox SE)
+• XS: 8 vCPU / 8 GB — CONFIRMED
+• S: 8 vCPU / 16 GB — ESTIMATED
+• M/L/XL: doubled per tier — ESTIMATED (official datasheet unavailable at authoring time)
+• DNS QPS at 85% CHR: XS 681 · S 2 900 · M 14 800 · L 35 000 — CONFIRMED from benchmarks
+• XL QPS (70 000) — ESTIMATED (2× L)
+• DHCP LPS and IPAM object limits — ESTIMATED
+
+CLOUD PLACEMENT
+• Target: <20 ms hub-to-NIOSXaaS latency (inline with Versa SD-WAN control plane)
+• Preference: same-city PoP > same-country > nearest low-latency region
+• Reference cloud: AWS (Azure/GCP equivalents available on request)`
+  }
+
+  // ── Generic seller copilot fallback ─────────────────────────────────────
+  return `**Seller / Channel-Partner Copilot — Infoblox × Versa SASE**
+
+I can help you with:
+• "How many tokens does this environment need?"
+• "Show per-region NIOSXaaS sizing"
+• "What are the NIOSXaaS form factors and specs?"
+• "Best cloud location to deploy NIOSXaaS?"
+• "Estimate tokens for 50 sites"
+• "What's the recommended PoC setup?"
+• "Show me the SKU list"
+• "Explain the token calculation assumptions"`
+
+  } // end isSellerQuery block
+
   // Generic IPsec/BGP fallback
   if (q.includes('ipsec') || q.includes('tunnel') || q.includes('bgp') || q.includes('vpn') || q.includes('troubleshoot')) {
     return `**IPsec & BGP Incident Summary**\n\nIPsec: ${ipsecSummary.up} up · ${ipsecSummary.degraded} degraded · ${ipsecSummary.down} down\nBGP: ${bgpSummary.established} established · ${bgpSummary.active} active · ${bgpSummary.idle} idle\n\nTry asking:\n• "Which IPsec tunnels are down?"\n• "Show degraded tunnels"\n• "Any BGP sessions flapping?"\n• "What's wrong with Chicago?"\n• "Explain the Phase 2 mismatch"\n• "Any certificate expiry alerts?"`
   }
 
   // Fallback
-  return `I can answer questions about the **${devices.length} devices** on the map, plus IPsec tunnels and BGP sessions.\n\nTry asking:\n• "How many devices are in Europe?"\n• "Which devices are offline?"\n• "Which IPsec tunnels are down?"\n• "Any BGP flapping?"\n• "What's wrong with Chicago?"\n\n*(Mock mode — set ANTHROPIC_API_KEY in .env for full AI responses)*`
+  return `I can answer questions across three domains:\n\n**Network Topology**\n• "How many devices are in Europe?"\n• "Which devices are offline?"\n\n**IPsec & BGP Troubleshooting**\n• "Which tunnels are down?" · "Any BGP flapping?" · "What's wrong with Chicago?"\n\n**Seller / Partner Copilot**\n• "How many tokens does this environment need?"\n• "What size NIOSXaaS servers for APAC?"\n• "Best cloud location for NIOSXaaS?"\n• "Estimate tokens for 50 sites"\n\n*(Mock mode — set ANTHROPIC_API_KEY in .env for full AI responses)*`
 }
 
 // ── System prompt for Claude ───────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are an AI-Powered IPsec & BGP Troubleshooting Agent embedded in the Infoblox SASE Control Center dashboard. \
-You have real-time visibility into the global branch device infrastructure, IPsec tunnels, and BGP sessions.
+const SYSTEM_PROMPT = `You are an AI assistant embedded in the Infoblox SASE Control Center. \
+You operate across three domains: (1) network topology, (2) IPsec & BGP troubleshooting, and (3) seller/channel-partner copilot for token estimates, NIOSXaaS sizing, and cloud placement.
+
+TOKEN CALCULATOR ASSUMPTIONS (declare these when answering sizing questions):
+- 50 managed endpoints per branch, 200 per hub
+- Peak DNS: 30 QPS/branch · 150 QPS/hub · 85% cache hit ratio · 1.3× headroom
+- Management tokens: ~1 per 5 managed IPs (pre-sales estimate; unconfirmed per-IP rate)
+- Server tokens confirmed: XS 250 · S 470 · M 940 · L 1 880 · XL 3 760
+- Reporting: 40 tokens per 10 M log events/month
+- HA pair per region assumed
+
+NIOSXAAS FORM FACTORS (DNS QPS at 85% CHR — confirmed from Infoblox benchmarks):
+XS: 8vCPU/8GB · 681 QPS · 250 server tokens · up to 5 sites
+S:  8vCPU/16GB · 2 900 QPS · 470 server tokens · up to 15 sites [16GB ESTIMATED]
+M:  16vCPU/32GB · 14 800 QPS · 940 server tokens · up to 40 sites [ESTIMATED]
+L:  32vCPU/64GB · 35 000 QPS · 1 880 server tokens · up to 100 sites [ESTIMATED]
+XL: 64vCPU/128GB · 70 000 QPS · 3 760 server tokens · 100+ sites [ESTIMATED]
+
+TOKEN ESTIMATE FOR THIS ENVIRONMENT (${demoEnv.totalDevices} devices, 6 regions):
+Management: ${demoTokenEstimate.management.tokens} tokens (${demoTokenEstimate.management.packs} packs)
+Server:     ${demoTokenEstimate.server.tokens} tokens (${demoTokenEstimate.server.packs} packs)
+Reporting:  ${demoTokenEstimate.reporting.tokens} tokens (${demoTokenEstimate.reporting.packs} packs)
+Total:      ${demoTokenEstimate.total} tokens
+
+RECOMMENDED NIOSXAAS CLOUD LOCATIONS:
+${Object.entries(regionCloudMap).map(([r, c]) => `${r}: ${c.primary.cloud} ${c.primary.region} (${c.primary.latencyToHub}) | failover: ${c.secondary.region}`).join('\n')}
+
+POC CONFIGURATION: Grid Master S + 2× XS members · ${pocConfig.minTokens} tokens · ${pocConfig.duration}
 
 NETWORK OVERVIEW:
 - Total devices: ${devices.length}
