@@ -58,16 +58,27 @@ const navItems = [
   }
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ activePage, onNavigate }) {
   const [active, setActive] = useState('SASE')
+
+  function handleClick(label) {
+    setActive(label)
+    if (label === 'Dashboard') onNavigate('dashboard')
+    else if (label === 'SASE')  onNavigate('map')
+    else                        onNavigate('map')
+  }
+
+  const effectiveActive = activePage === 'dashboard' ? 'Dashboard'
+    : activePage === 'map' ? 'SASE'
+    : active
 
   return (
     <aside className="sidebar">
       {navItems.map(item => (
         <button
           key={item.label}
-          className={`sidebar-item ${active === item.label ? 'sidebar-item--active' : ''}`}
-          onClick={() => setActive(item.label)}
+          className={`sidebar-item ${effectiveActive === item.label ? 'sidebar-item--active' : ''}`}
+          onClick={() => handleClick(item.label)}
           title={item.label}
         >
           <span className="sidebar-icon">{item.icon}</span>
