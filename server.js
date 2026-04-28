@@ -9,6 +9,7 @@ import {
   tokenPool, tokenHistory, regionTokenAllocation, tokenDrivers,
   tokenAlerts, tokenForecast,
 } from './src/data/catalog.js'
+import { insights, insightsSummary } from './src/data/insights.js'
 
 const API_KEY  = process.env.ANTHROPIC_API_KEY
 const MOCK_MODE = !API_KEY || process.env.MOCK_AI === 'true'
@@ -645,6 +646,69 @@ app.post('/api/chat', async (req, res) => {
 app.get('/api/health', (_req, res) =>
   res.json({ ok: true, devices: devices.length, apiKey: !!API_KEY, mock: MOCK_MODE })
 )
+
+// ── Dashboard endpoints ───────────────────────────────────────────────────────
+
+app.get('/api/dashboard', (_req, res) => {
+  const top5 = insights
+    .filter(i => i.severity === 'critical' || i.severity === 'high')
+    .slice(0, 5)
+  res.json({ summary: insightsSummary, topInsights: top5 })
+})
+
+const feedbackStore = {}
+
+app.post('/api/nlp-query', (req, res) => {
+  const { query = '' } = req.body
+  const q = query.toLowerCase().trim()
+  if (!q) return res.json({ results: insights, matchedFilters: [] })
+
+  const matchedFilters = []
+  const results = insights.filter(ins => {
+    const hits = [
+      ins.title.toLowerCase(),
+      ins.category.toLowerCase(),
+      ins.severity.toLowerCase(),
+      ins.affectedRegion.toLowerCase(),
+      ins.affectedSite.toLowerCase(),
+      ins.summary.toLowerCase(),
+      ...ins.rootCauses.map(r => r.cause.toLowerCase()),
+    ].some(field => field.includes(q))
+
+    if (q.includes('flap')   && ins.flapping)  { matchedFilters.push('flapping');  return true }
+    if (q.includes('recur')  && ins.recurring) { matchedFilters.push('recurring'); return true }
+    return hits
+  })
+
+  const unique = [...new Set(matchedFilters)]
+  res.json({ results, matchedFilters: unique, query })
+})
+
+app.post('/api/feedback', (req, res) => {
+  const { id, vote, comment = '' } = req.body
+  if (!id || !vote) return res.status(400).json({ error: 'id and vote required' })
+  feedbackStore[id] = { vote, comment, timestamp: new Date().toISOString() }
+  res.json({ ok: true, id, vote })
+})
+
+app.post('/api/remediate', (req, res) => {
+  const { id, stepIndex } = req.body
+  const ins  = insights.find(i => i.id === id)
+  if (!ins) return res.status(404).json({ error: 'insight not found' })
+  const step = ins.remediationSteps.find(s => s.step === stepIndex)
+  if (!step) return res.status(404).json({ error: 'step not found' })
+
+  if (!step.safe) {
+    return res.json({ preview: true, command: step.command, description: step.preview })
+  }
+
+  res.json({
+    result:  'simulated',
+    output:  `[MOCK] Executed: ${step.command}\n[MOCK] Exit code: 0\n[MOCK] Done.`,
+    insightId: id,
+    step:    stepIndex,
+  })
+})
 
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
