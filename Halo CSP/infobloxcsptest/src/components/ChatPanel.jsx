@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { mockReply } from '../lib/mockAI.js'
 
 const WELCOME = {
   role: 'assistant',
@@ -50,33 +51,9 @@ export default function ChatPanel({ isOpen, onToggle }) {
     setMessages(next)
     setLoading(true)
 
-    try {
-      const res  = await fetch('/api/chat', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          message: msg,
-          history: messages
-            .filter(m => m !== WELCOME)
-            .map(m => ({ role: m.role, content: m.content }))
-        })
-      })
-      const data = await res.json()
-      setMessages([...next, {
-        role:    'assistant',
-        content: data.error ? `Error: ${data.error}` : data.reply,
-        isError: !!data.error,
-        isMock:  !!data.mock
-      }])
-    } catch {
-      setMessages([...next, {
-        role:    'assistant',
-        content: 'Connection error — make sure the server is running (`npm run dev`).',
-        isError: true
-      }])
-    } finally {
-      setLoading(false)
-    }
+    await new Promise(r => setTimeout(r, 300))
+    setMessages([...next, { role: 'assistant', content: mockReply(msg), isMock: true }])
+    setLoading(false)
   }
 
   return (

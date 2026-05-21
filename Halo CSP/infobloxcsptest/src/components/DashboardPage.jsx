@@ -56,14 +56,9 @@ export default function DashboardPage() {
     if (!step) return
     if (step.safe) {
       setRemediateStatus(prev => ({ ...prev, [`${insightId}-${stepIndex}`]: 'running' }))
-      fetch('/api/remediate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: insightId, stepIndex }),
-      })
-        .then(r => r.json())
-        .then(() => setRemediateStatus(prev => ({ ...prev, [`${insightId}-${stepIndex}`]: 'done' })))
-        .catch(() => setRemediateStatus(prev => ({ ...prev, [`${insightId}-${stepIndex}`]: 'error' })))
+      setTimeout(() => {
+        setRemediateStatus(prev => ({ ...prev, [`${insightId}-${stepIndex}`]: 'done' }))
+      }, 600)
     } else {
       setRemediateInfo({ ins, step })
     }
@@ -253,11 +248,6 @@ export default function DashboardPage() {
             <div className="modal-actions">
               <button className="modal-btn modal-btn--cancel" onClick={() => setRemediateInfo(null)}>Cancel</button>
               <button className="modal-btn modal-btn--execute" onClick={() => {
-                fetch('/api/remediate', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ id: remediateInfo.ins.id, stepIndex: remediateInfo.step.step }),
-                }).catch(() => {})
                 setRemediateInfo(null)
               }}>Execute</button>
             </div>
