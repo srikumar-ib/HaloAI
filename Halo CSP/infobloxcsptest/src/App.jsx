@@ -13,8 +13,8 @@ export default function App() {
   const [activeTab,   setActiveTab]   = useState('DNS')
 
   const pageTitle = activePage === 'dashboard'
-    ? 'AI Operations Dashboard'
-    : 'SASE Control Center'
+    ? 'IQ: HALO AI Dashboard'
+    : 'IQ: Operations'
 
   function handleTabClick(tab) {
     setActiveTab(tab)
@@ -37,7 +37,7 @@ export default function App() {
             <div className="page-header-top">
               <div>
                 <div className="breadcrumb">
-                  <span>Dashboard</span>
+                  <span>IQ</span>
                   <span className="bc-sep">›</span>
                   <span className="bc-active">{pageTitle}</span>
                 </div>
